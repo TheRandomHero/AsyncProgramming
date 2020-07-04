@@ -18,7 +18,7 @@ namespace StockAnalyzer.Windows
             InitializeComponent();
         }
 
-        private void Search_Click(object sender, RoutedEventArgs e)
+        private async void Search_Click(object sender, RoutedEventArgs e)
         {
             #region Before loading stock data
             var watch = new Stopwatch();
@@ -27,18 +27,34 @@ namespace StockAnalyzer.Windows
             StockProgress.IsIndeterminate = true;
             #endregion
 
-            var client = new WebClient();
+            using (var client = new HttpClient())
+            {
+                var response = await client.GetAsync($"http://localhost:61363/api/stocks/{Ticker.Text}");
 
-            var content = client.DownloadString($"http://localhost:61363/api/stocks/{Ticker.Text}");
+                try
+                {
+                    response.EnsureSuccessStatusCode();
 
-            var data = JsonConvert.DeserializeObject<IEnumerable<StockPrice>>(content);
+                    var content = await response.Content.ReadAsStringAsync();
 
-            Stocks.ItemsSource = data;
+                    var data = JsonConvert.DeserializeObject<IEnumerable<StockPrice>>(content);
 
+                    Stocks.ItemsSource = data;
+                }
+                catch (Exception ex)
+                {
+
+                    Notes.Text += ex.Message;
+                }
+
+
+            }
+            
             #region After stock data is loaded
             StocksStatus.Text = $"Loaded stocks for {Ticker.Text} in {watch.ElapsedMilliseconds}ms";
             StockProgress.Visibility = Visibility.Hidden;
             #endregion
+
         }
 
         private void Hyperlink_OnRequestNavigate(object sender, RequestNavigateEventArgs e)
