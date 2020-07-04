@@ -26,7 +26,7 @@ namespace StockAnalyzer.Windows
 
         CancellationTokenSource cancellationTokenSource = null;
 
-        private void Search_Click(object sender, RoutedEventArgs e)
+        private async void Search_Click(object sender, RoutedEventArgs e)
         {
             #region Before loading stock data
             var watch = new Stopwatch();
@@ -37,33 +37,63 @@ namespace StockAnalyzer.Windows
             Search.Content = "Cancel";
             #endregion
 
-            var lines = File.ReadAllLines(@"StockPrices_Small.csv");
+            var loadLinesTask = Task.Run(() =>
+           {
+               var lines = File.ReadAllLines(@"StockPrices_Small.csv");
 
-            var data = new List<StockPrice>();
+               return lines;
+           });
 
-            foreach (var line in lines.Skip(1))
+            var processStocksTask = loadLinesTask.ContinueWith(t =>
             {
-                var segments = line.Split(',');
+                var lines = t.Result;
 
-                for (var i = 0; i < segments.Length; i++) segments[i] = segments[i].Trim('\'', '"');
-                var price = new StockPrice
+                var data = new List<StockPrice>();
+
+                foreach (var line in lines.Skip(1))
                 {
-                    Ticker = segments[0],
-                    TradeDate = DateTime.ParseExact(segments[1], "M/d/yyyy h:mm:ss tt", CultureInfo.InvariantCulture),
-                    Volume = Convert.ToInt32(segments[6], CultureInfo.InvariantCulture),
-                    Change = Convert.ToDecimal(segments[7], CultureInfo.InvariantCulture),
-                    ChangePercent = Convert.ToDecimal(segments[8], CultureInfo.InvariantCulture),
-                };
-                data.Add(price);
-            }
+                    var segments = line.Split(',');
 
-            Stocks.ItemsSource = data.Where(price => price.Ticker == Ticker.Text);
+                    for (var i = 0; i < segments.Length; i++) segments[i] = segments[i].Trim('\'', '"');
+                    var price = new StockPrice
+                    {
+                        Ticker = segments[0],
+                        TradeDate = DateTime.ParseExact(segments[1], "M/d/yyyy h:mm:ss tt", CultureInfo.InvariantCulture),
+                        Volume = Convert.ToInt32(segments[6], CultureInfo.InvariantCulture),
+                        Change = Convert.ToDecimal(segments[7], CultureInfo.InvariantCulture),
+                        ChangePercent = Convert.ToDecimal(segments[8], CultureInfo.InvariantCulture),
+                    };
+                    data.Add(price);
+                }
 
-            #region After stock data is loaded
-            StocksStatus.Text = $"Loaded stocks for {Ticker.Text} in {watch.ElapsedMilliseconds}ms";
-            StockProgress.Visibility = Visibility.Hidden;
-            Search.Content = "Search";
-            #endregion
+                Dispatcher.Invoke(() =>
+                {
+                    Stocks.ItemsSource = data.Where(price => price.Ticker == Ticker.Text);
+
+                });
+            }, TaskContinuationOptions.OnlyOnRanToCompletion);
+
+            loadLinesTask.ContinueWith(t =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    Notes.Text = t.Exception.InnerException.Message;
+                });
+            }, TaskContinuationOptions.OnlyOnFaulted);
+
+            processStocksTask.ContinueWith(_ =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    #region After stock data is loaded
+                    StocksStatus.Text = $"Loaded stocks for {Ticker.Text} in {watch.ElapsedMilliseconds}ms";
+                    StockProgress.Visibility = Visibility.Hidden;
+                    Search.Content = "Search";
+                    #endregion
+                });
+            });
+
+            
 
             cancellationTokenSource = null;
         }
